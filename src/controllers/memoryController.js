@@ -1,26 +1,24 @@
 import Memory from '../models/Memory.js';
 import User from '../models/User.js';
+import aptosService from '../services/aptosService.js';
 import ipfsService from '../services/ipfsService.js';
-import blockchainService from '../services/blockchainService.js';
-
 /**
  * @desc    Create new memory
  * @route   POST /api/memories
  * @access  Private
  */
-const createMemory = async (req, res, next) => {
+export const createMemory = async (req, res, next) => {
   try {
     const { 
       title, 
       description, 
       category, 
-      fileData,  // Base64 encoded file
+      fileData,
       fileName,
       fileType,
       storeOnChain = false 
     } = req.body;
 
-    // Validate required fields
     if (!title || !fileData) {
       return res.status(400).json({
         success: false,
@@ -35,18 +33,17 @@ const createMemory = async (req, res, next) => {
       title,
       category
     });
-
     console.log('✅ IPFS Upload successful:', ipfsResult.ipfsHash);
 
-    // 2. Store on blockchain (optional)
-    let blockchainResult = null;
+    // 2. Store on Aptos blockchain (optional)
+    let aptosResult = null;
     if (storeOnChain) {
-      console.log('⛓️ Storing on blockchain...');
-      blockchainResult = await blockchainService.storeMemoryOnChain(
+      console.log('⛓️ Storing on Aptos blockchain...');
+      aptosResult = await aptosService.storeMemoryOnChain(
         ipfsResult.ipfsHash,
-        req.user.walletAddress
+        req.user.aptosAddress
       );
-      console.log('✅ Blockchain storage:', blockchainResult);
+      console.log('✅ Aptos storage:', aptosResult);
     }
 
     // 3. Save to database
@@ -57,9 +54,9 @@ const createMemory = async (req, res, next) => {
       category: category || 'other',
       ipfsHash: ipfsResult.ipfsHash,
       ipfsUrl: ipfsResult.gatewayUrl,
-      txHash: blockchainResult?.txHash || null,
-      blockNumber: blockchainResult?.blockNumber || null,
-      isOnChain: !!blockchainResult?.success,
+      txHash: aptosResult?.txHash || null,
+      txVersion: aptosResult?.txVersion || null,
+      isOnChain: !!aptosResult?.success,
       fileType,
       fileSize: Buffer.byteLength(fileData, 'base64'),
       fileName
@@ -82,7 +79,7 @@ const createMemory = async (req, res, next) => {
           hash: ipfsResult.ipfsHash,
           url: ipfsResult.gatewayUrl
         },
-        blockchain: blockchainResult
+        aptos: aptosResult
       }
     });
 
@@ -95,13 +92,11 @@ const createMemory = async (req, res, next) => {
 /**
  * @desc    Get all memories for user
  * @route   GET /api/memories
- * @access  Private
  */
-const getMemories = async (req, res, next) => {
+export const getMemories = async (req, res, next) => {
   try {
     const { page = 1, limit = 20, category, search } = req.query;
 
-    // Build query
     const query = { userId: req.user._id };
     
     if (category && category !== 'all') {
@@ -115,7 +110,6 @@ const getMemories = async (req, res, next) => {
       ];
     }
 
-    // Execute query with pagination
     const memories = await Memory.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -141,14 +135,10 @@ const getMemories = async (req, res, next) => {
   }
 };
 
-export { createMemory, getMemories, getMemory, deleteMemory, getMemoryFile, verifyMemory, getStats };
-
 /**
  * @desc    Get single memory
- * @route   GET /api/memories/:id
- * @access  Private
  */
-const getMemory = async (req, res, next) => {
+export const getMemory = async (req, res, next) => {
   try {
     const memory = await Memory.findOne({
       _id: req.params.id,
@@ -162,11 +152,7 @@ const getMemory = async (req, res, next) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: memory
-    });
-
+    res.json({ success: true, data: memory });
   } catch (error) {
     next(error);
   }
@@ -174,10 +160,8 @@ const getMemory = async (req, res, next) => {
 
 /**
  * @desc    Delete memory
- * @route   DELETE /api/memories/:id
- * @access  Private
  */
-const deleteMemory = async (req, res, next) => {
+export const deleteMemory = async (req, res, next) => {
   try {
     const memory = await Memory.findOne({
       _id: req.params.id,
@@ -191,17 +175,14 @@ const deleteMemory = async (req, res, next) => {
       });
     }
 
-    // Unpin from IPFS (optional - you might want to keep it)
     try {
       await ipfsService.unpin(memory.ipfsHash);
     } catch (err) {
       console.warn('Failed to unpin from IPFS:', err.message);
     }
 
-    // Delete from database
     await memory.deleteOne();
 
-    // Update user stats
     await User.findByIdAndUpdate(req.user._id, {
       $inc: { 
         totalMemories: -1,
@@ -209,51 +190,16 @@ const deleteMemory = async (req, res, next) => {
       }
     });
 
-    res.json({
-      success: true,
-      message: 'Memory deleted successfully'
-    });
-
+    res.json({ success: true, message: 'Memory deleted successfully' });
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * @desc    Get memory file from IPFS
- * @route   GET /api/memories/:id/file
- * @access  Private
+ * @desc    Verify memory on Aptos blockchain
  */
-const getMemoryFile = async (req, res, next) => {
-  try {
-    const memory = await Memory.findOne({
-      _id: req.params.id,
-      userId: req.user._id
-    });
-
-    if (!memory) {
-      return res.status(404).json({
-        success: false,
-        message: 'Memory not found'
-      });
-    }
-
-    const file = await ipfsService.getFile(memory.ipfsHash);
-
-    res.set('Content-Type', file.contentType || 'application/octet-stream');
-    res.send(Buffer.from(file.data));
-
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Verify memory on blockchain
- * @route   GET /api/memories/:id/verify
- * @access  Private
- */
-const verifyMemory = async (req, res, next) => {
+export const verifyMemory = async (req, res, next) => {
   try {
     const memory = await Memory.findOne({
       _id: req.params.id,
@@ -275,15 +221,15 @@ const verifyMemory = async (req, res, next) => {
       });
     }
 
-    // Get blockchain data
-    const blockchainData = await blockchainService.getMemoryFromChain(memory.blockchainId);
+    // Get transaction details from Aptos
+    const txDetails = await aptosService.getTransaction(memory.txHash);
 
     res.json({
       success: true,
-      verified: true,
+      verified: txDetails.success,
       data: {
         memory,
-        blockchain: blockchainData
+        blockchain: txDetails.transaction
       }
     });
 
@@ -294,10 +240,8 @@ const verifyMemory = async (req, res, next) => {
 
 /**
  * @desc    Get user statistics
- * @route   GET /api/memories/stats
- * @access  Private
  */
-const getStats = async (req, res, next) => {
+export const getStats = async (req, res, next) => {
   try {
     const stats = await Memory.aggregate([
       { $match: { userId: req.user._id } },
@@ -306,27 +250,28 @@ const getStats = async (req, res, next) => {
           _id: null,
           totalMemories: { $sum: 1 },
           totalSize: { $sum: '$fileSize' },
-          onChain: { $sum: { $cond: ['$isOnChain', 1, 0] } },
-          categories: { $addToSet: '$category' }
+          onChain: { $sum: { $cond: ['$isOnChain', 1, 0] } }
         }
       }
     ]);
 
     const categoryStats = await Memory.aggregate([
       { $match: { userId: req.user._id } },
-      {
-        $group: {
-          _id: '$category',
-          count: { $sum: 1 }
-        }
-      }
+      { $group: { _id: '$category', count: { $sum: 1 } } }
     ]);
+
+    // Get Aptos balance if user has address
+    let aptosBalance = null;
+    if (req.user.aptosAddress) {
+      aptosBalance = await aptosService.getBalance(req.user.aptosAddress);
+    }
 
     res.json({
       success: true,
       data: {
         overview: stats[0] || { totalMemories: 0, totalSize: 0, onChain: 0 },
-        byCategory: categoryStats
+        byCategory: categoryStats,
+        aptos: aptosBalance
       }
     });
 

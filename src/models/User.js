@@ -15,18 +15,27 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Password is required'],
     minlength: [6, 'Password must be at least 6 characters'],
-    select: false // Don't return password by default
+    select: false
   },
   name: {
     type: String,
     trim: true,
     maxlength: [50, 'Name cannot exceed 50 characters']
   },
-  // Wallet Info (Backend-managed)
-  walletAddress: {
+  // ===========================================
+  // APTOS Wallet Info (Changed from EVM)
+  // ===========================================
+  // Aptos addresses are 64 hex characters (32 bytes)
+  aptosAddress: {
     type: String,
     unique: true,
     sparse: true
+  },
+  // We store encrypted private key for user's dedicated wallet
+  // In production, use proper key management (HSM, etc.)
+  encryptedPrivateKey: {
+    type: String,
+    select: false
   },
   // Profile
   avatar: {
@@ -40,7 +49,7 @@ const userSchema = new mongoose.Schema({
   },
   storageUsed: {
     type: Number,
-    default: 0 // in bytes
+    default: 0
   },
   // Security
   lastLogin: {
@@ -50,7 +59,6 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  // Timestamps
   createdAt: {
     type: Date,
     default: Date.now
@@ -69,7 +77,7 @@ userSchema.pre('save', async function(next) {
   next();
 });
 
-// Compare password method
+// Compare password
 userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
@@ -80,20 +88,32 @@ userSchema.methods.generateAuthToken = function() {
     { 
       id: this._id, 
       email: this.email,
-      walletAddress: this.walletAddress 
+      aptosAddress: this.aptosAddress 
     },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRE || '7d' }
   );
 };
 
-// Generate wallet address (simplified - in production use proper key derivation)
-userSchema.methods.generateWalletAddress = function() {
-  const { ethers } = require('ethers');
-  const wallet = ethers.Wallet.createRandom();
-  this.walletAddress = wallet.address;
-  return wallet.address;
+// Generate Aptos wallet address for user
+userSchema.methods.generateAptosWallet = async function() {
+  const { Account } = require('@aptos-labs/ts-sdk');
+  
+  // Generate new Aptos account
+  const account = Account.generate();
+  
+  // Store address (public)
+  this.aptosAddress = account.accountAddress.toString();
+  
+  // Store encrypted private key (in production, use proper encryption)
+  // This is simplified - use proper key management in production!
+  const crypto = require('crypto');
+  const cipher = crypto.createCipher('aes-256-cbc', process.env.JWT_SECRET);
+  let encrypted = cipher.update(account.privateKey.toString(), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  this.encryptedPrivateKey = encrypted;
+  
+  return this.aptosAddress;
 };
 
-// module.exports = mongoose.model('User', userSchema);
 export default mongoose.model('User', userSchema);

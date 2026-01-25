@@ -1,17 +1,17 @@
 import express from 'express';
-import cors from 'cors';
 import helmet from 'helmet';
-
+import cors from 'cors';
 // Import Routes
-import memoryRoutes from './routes/memoryRoutes.js';
+
 import authRoutes from './routes/authRoutes.js';
+import memoryRoutes from './routes/memoryRoutes.js';
 
 const app = express();
 
 // Security Middleware
 app.use(helmet());
 app.use(cors({
-  origin: '*', // Configure for production
+  origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -24,8 +24,9 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.get('/', (req, res) => {
   res.json({
     success: true,
-    message: '🔐 LifeVault API is running!',
-    version: '1.0.0',
+    message: '🔐 LifeVault API is running on Aptos!',
+    version: '2.0.0',
+    blockchain: 'Aptos',
     endpoints: {
       auth: '/api/auth',
       memories: '/api/memories'
