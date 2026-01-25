@@ -1,15 +1,11 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
-/**
- * Protect routes - Verify JWT token
- */
 const protect = async (req, res, next) => {
   try {
     let token;
 
-    // Check for token in headers
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    if (req.headers.authorization?.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
     }
 
@@ -21,10 +17,7 @@ const protect = async (req, res, next) => {
     }
 
     try {
-      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      // Get user from token
       const user = await User.findById(decoded.id);
 
       if (!user) {
@@ -34,7 +27,6 @@ const protect = async (req, res, next) => {
         });
       }
 
-      // Attach user to request
       req.user = user;
       next();
     } catch (error) {
@@ -48,31 +40,5 @@ const protect = async (req, res, next) => {
   }
 };
 
-/**
- * Optional auth - Attach user if token exists, but don't block
- */
-const optionalAuth = async (req, res, next) => {
-  try {
-    let token;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = await User.findById(decoded.id);
-      } catch (error) {
-        // Token invalid, but continue without user
-      }
-    }
-
-    next();
-  } catch (error) {
-    next(error);
-  }
-};
-
-
-export { protect, optionalAuth };
+export { protect };

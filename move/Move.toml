@@ -1,0 +1,10 @@
+[package]
+name = "MemoryVault"
+version = "1.0.0"
+authors = ["LifeVault Team"]
+
+[addresses]
+memory_vault = "_"
+
+[dependencies]
+AptosFramework = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-framework", rev = "mainnet" }

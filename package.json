@@ -8,11 +8,19 @@
     "dev": "nodemon src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["aptos", "blockchain", "ipfs", "memory", "vault", "move"],
+  "keywords": [
+    "aptos",
+    "blockchain",
+    "ipfs",
+    "memory",
+    "vault",
+    "move"
+  ],
   "author": "LifeVault Team",
   "license": "MIT",
   "dependencies": {
     "@aptos-labs/ts-sdk": "^1.26.0",
+    "aptos": "^1.22.1",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
