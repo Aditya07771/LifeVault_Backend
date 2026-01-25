@@ -212,61 +212,59 @@ class AptosService {
   /**
    * Store memory hash on Aptos blockchain
    */
-  async storeMemoryOnChain(ipfsHash, userAddress = null) {
+ async storeMemoryOnChain(ipfsHash, userAddress = null) {
     try {
       if (!this.initialized) {
         await this.initialize();
       }
 
-      if (!this.moduleAddress) {
-        console.log('⚠️ Module not deployed. Returning mock transaction.');
-        return {
-          success: true,
-          mock: true,
-          message: 'Module not deployed - mock transaction',
-          txHash: `mock_${Date.now()}`,
-          ipfsHash
-        };
-      }
+      console.log(`📝 Preparing blockchain transaction for IPFS: ${ipfsHash}`);
 
-      console.log(`📝 Storing memory on chain: ${ipfsHash}`);
+      // Ensure formatting is exactly address::module::function
+      const functionPayload = `${this.moduleAddress}::${this.moduleName}::store_memory`;
 
+      // Build the transaction
       const transaction = await this.aptos.transaction.build.simple({
         sender: this.masterAccount.accountAddress,
         data: {
-          function: `${this.moduleAddress}::${this.moduleName}::store_memory`,
-          functionArguments: [ipfsHash]
-        }
+          function: functionPayload,
+          functionArguments: [ipfsHash], // Aptos SDK converts strings to Move strings automatically
+        },
       });
 
+      console.log('🔑 Signing and submitting transaction...');
+
+      // Sign and submit
       const senderAuthenticator = this.aptos.transaction.sign({
         signer: this.masterAccount,
-        transaction
+        transaction,
       });
 
       const pendingTx = await this.aptos.transaction.submit.simple({
         transaction,
-        senderAuthenticator
+        senderAuthenticator,
       });
 
-      console.log(`✅ Transaction submitted: ${pendingTx.hash}`);
+      console.log(`📡 Transaction submitted. Hash: ${pendingTx.hash}`);
 
+      // Wait for confirmation
       const executedTx = await this.aptos.waitForTransaction({
-        transactionHash: pendingTx.hash
+        transactionHash: pendingTx.hash,
       });
 
-      console.log(`✅ Transaction confirmed: ${executedTx.hash}`);
+      console.log(`✅ Blockchain confirmation received! Version: ${executedTx.version}`);
 
       return {
         success: true,
         txHash: pendingTx.hash,
         txVersion: executedTx.version,
-        gasUsed: executedTx.gas_used,
-        vmStatus: executedTx.vm_status,
         ipfsHash
       };
     } catch (error) {
-      console.error('Aptos store error:', error);
+      console.error('❌ Aptos Store Error Details:');
+      if (error.data) console.error('Error Data:', error.data);
+      console.error('Message:', error.message);
+      
       throw new Error(`Aptos transaction failed: ${error.message}`);
     }
   }

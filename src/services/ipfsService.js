@@ -1,11 +1,28 @@
 import axios from 'axios';
 import FormData from 'form-data';
+import dotenv from 'dotenv';
+
+// Ensure env variables are loaded even if called out of order
+dotenv.config();
 
 class IPFSService {
   constructor() {
-    this.pinataJWT = process.env.PINATA_JWT;
     this.pinataBaseUrl = 'https://api.pinata.cloud';
     this.gatewayUrl = 'https://gateway.pinata.cloud/ipfs';
+  }
+
+  // Get JWT dynamically to ensure it's loaded from process.env
+  getHeaders() {
+    const jwt = process.env.PINATA_JWT;
+    
+    if (!jwt) {
+      console.error("❌ CRITICAL: PINATA_JWT is missing from process.env");
+      throw new Error("Pinata JWT not configured");
+    }
+
+    return {
+      'Authorization': `Bearer ${jwt.trim()}`
+    };
   }
 
   async pinJSON(jsonData, metadata = {}) {
@@ -19,7 +36,7 @@ class IPFSService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${this.pinataJWT}`
+            ...this.getHeaders()
           }
         }
       );
@@ -30,6 +47,7 @@ class IPFSService {
         gatewayUrl: `${this.gatewayUrl}/${response.data.IpfsHash}`
       };
     } catch (error) {
+      console.error('IPFS JSON Pin Error:', error.response?.data || error.message);
       throw new Error(`Failed to pin to IPFS: ${error.message}`);
     }
   }
@@ -47,7 +65,7 @@ class IPFSService {
           maxBodyLength: Infinity,
           headers: {
             ...formData.getHeaders(),
-            'Authorization': `Bearer ${this.pinataJWT}`
+            ...this.getHeaders() // Calling the helper here
           }
         }
       );
@@ -58,11 +76,13 @@ class IPFSService {
         gatewayUrl: `${this.gatewayUrl}/${response.data.IpfsHash}`
       };
     } catch (error) {
+      console.error('IPFS File Pin Error:', error.response?.data || error.message);
       throw new Error(`Failed to pin file to IPFS: ${error.message}`);
     }
   }
 
   async pinBase64(base64Data, fileName, metadata = {}) {
+    if (!base64Data) throw new Error("No base64 data provided");
     const base64Content = base64Data.replace(/^data:.*?;base64,/, '');
     const buffer = Buffer.from(base64Content, 'base64');
     return await this.pinFile(buffer, fileName, metadata);
@@ -77,13 +97,6 @@ class IPFSService {
       data: response.data,
       contentType: response.headers['content-type']
     };
-  }
-
-  async unpin(ipfsHash) {
-    await axios.delete(`${this.pinataBaseUrl}/pinning/unpin/${ipfsHash}`, {
-      headers: { 'Authorization': `Bearer ${this.pinataJWT}` }
-    });
-    return { success: true };
   }
 }
 
