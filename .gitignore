@@ -19,4 +19,6 @@
 # Hardhat coverage reports
 /coverage
 
-/env
+# Environment variables
+.env
+.env.*
