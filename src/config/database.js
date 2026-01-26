@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
+      serverSelectionTimeoutMS: 30000
       // These options are no longer needed in Mongoose 6+
       // but included for compatibility
     });
