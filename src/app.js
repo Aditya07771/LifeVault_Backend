@@ -1,10 +1,11 @@
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
-// Import Routes
 
+// Import Routes
 import authRoutes from './routes/authRoutes.js';
 import memoryRoutes from './routes/memoryRoutes.js';
+import shareRoutes from './routes/shareRoutes.js';  // Add this
 
 const app = express();
 
@@ -12,7 +13,7 @@ const app = express();
 app.use(helmet());
 app.use(cors({
   origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -29,7 +30,8 @@ app.get('/', (req, res) => {
     blockchain: 'Aptos',
     endpoints: {
       auth: '/api/auth',
-      memories: '/api/memories'
+      memories: '/api/memories',
+      share: '/api/share'  // Add this
     }
   });
 });
@@ -37,6 +39,7 @@ app.get('/', (req, res) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/memories', memoryRoutes);
+app.use('/api/share', shareRoutes);  // Add this
 
 // 404 Handler
 app.use((req, res) => {

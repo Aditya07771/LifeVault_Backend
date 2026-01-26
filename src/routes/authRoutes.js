@@ -3,7 +3,9 @@ import User from '../models/User.js';
 import aptosService from '../services/aptosService.js';
 import { protect } from '../middleware/authMiddleware.js';
 import nacl from 'tweetnacl';
-import { sha3_256 } from 'js-sha3';
+// import { sha3_256 } from 'js-sha3';
+import pkg from 'js-sha3';
+const { sha3_256 } = pkg;
 
 const router = express.Router();
 
