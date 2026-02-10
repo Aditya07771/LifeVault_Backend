@@ -2,6 +2,7 @@ import Memory from '../models/Memory.js';
 import User from '../models/User.js';
 import aptosService from '../services/aptosService.js';
 import ipfsService from '../services/ipfsService.js';
+
 /**
  * @desc    Create new memory
  * @route   POST /api/memories
@@ -276,6 +277,144 @@ export const getStats = async (req, res, next) => {
     });
 
   } catch (error) {
+    next(error);
+  }
+};
+
+
+// =============================================================
+// ← NEW CONTROLLER: RELAY / SPONSORED TRANSACTION
+// =============================================================
+
+/**
+ * @desc    Relay a memory to Aptos blockchain (server pays gas)
+ * @route   POST /api/memories/relay
+ * @access  Private
+ *
+ * Expected request body from the Android app:
+ * {
+ *   "ipfsHash":    "QmXyz...",           // CID returned from IPFS upload
+ *   "signature":   "0xabcdef...",         // Ed25519 sig = Sign(ipfsHash, userPrivateKey)
+ *   "title":       "My vacation photo",
+ *   "description": "Optional note",
+ *   "category":    "photo",
+ *   "fileType":    "image/jpeg",
+ *   "fileName":    "photo.jpg",
+ *   "fileSize":    123456               // bytes (optional, for stats)
+ * }
+ *
+ * The user must already have aptosPublicKey stored on their profile
+ * (set during wallet auth or registration).
+ */
+export const relayMemory = async (req, res, next) => {
+  try {
+    const {
+      ipfsHash,
+      signature,
+      title,
+      description,
+      category,
+      fileType,
+      fileName,
+      fileSize
+    } = req.body;
+
+    // ── Validate required fields ────────────────────────────────
+    if (!ipfsHash || !signature) {
+      return res.status(400).json({
+        success: false,
+        message: 'ipfsHash and signature are required'
+      });
+    }
+
+    if (!title) {
+      return res.status(400).json({
+        success: false,
+        message: 'title is required'
+      });
+    }
+
+    // ── Get user's public key ───────────────────────────────────
+    const userPublicKey = req.user.aptosPublicKey;
+
+    if (!userPublicKey) {
+      return res.status(400).json({
+        success: false,
+        message:
+          'No Aptos public key found on your account. ' +
+          'Please link a wallet first via /api/auth/wallet or /api/auth/link-wallet.'
+      });
+    }
+
+    console.log('\n=== Relay / Sponsored Transaction ===');
+    console.log('User ID   :', req.user._id);
+    console.log('IPFS Hash :', ipfsHash);
+    console.log('Public Key:', userPublicKey.substring(0, 20) + '...');
+
+    // ── Call the service (verify sig → submit tx) ───────────────
+    const aptosResult = await aptosService.submitSponsoredMemory(
+      ipfsHash,
+      userPublicKey,
+      signature
+    );
+
+    // ── Persist to MongoDB ──────────────────────────────────────
+    const ipfsGateway =
+      process.env.IPFS_GATEWAY || 'https://gateway.pinata.cloud/ipfs';
+
+    const memory = await Memory.create({
+      userId: req.user._id,
+      title,
+      description: description || '',
+      category: category || 'other',
+      ipfsHash,
+      ipfsUrl: `${ipfsGateway}/${ipfsHash}`,
+      txHash: aptosResult.txHash,
+      txVersion: aptosResult.txVersion,
+      isOnChain: true,
+      fileType: fileType || null,
+      fileSize: fileSize || 0,
+      fileName: fileName || null
+    });
+
+    // ── Update user stats ───────────────────────────────────────
+    await User.findByIdAndUpdate(req.user._id, {
+      $inc: {
+        totalMemories: 1,
+        storageUsed: fileSize || 0
+      }
+    });
+
+    console.log('✅ Relay complete. Memory ID:', memory._id);
+
+    // ── Respond ─────────────────────────────────────────────────
+    res.status(201).json({
+      success: true,
+      message: 'Memory relayed to blockchain successfully (gas sponsored)',
+      data: {
+        memory,
+        ipfs: {
+          hash: ipfsHash,
+          url: `${ipfsGateway}/${ipfsHash}`
+        },
+        aptos: {
+          txHash: aptosResult.txHash,
+          txVersion: aptosResult.txVersion,
+          sponsored: true
+        }
+      }
+    });
+  } catch (error) {
+    console.error('❌ Relay error:', error.message);
+
+    // Return a descriptive status when signature verification fails
+    if (error.message.includes('Relay rejected')) {
+      return res.status(403).json({
+        success: false,
+        message: error.message
+      });
+    }
+
     next(error);
   }
 };

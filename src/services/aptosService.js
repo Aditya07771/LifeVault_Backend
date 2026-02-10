@@ -5,9 +5,29 @@ import {
   Ed25519Account,
   Ed25519PrivateKey,
   PrivateKey,
-  Account,  // ADD THIS IMPORT
-  AccountAddress  // ADD THIS TOO - you use it in getBalance
+  Account,
+  AccountAddress
 } from "@aptos-labs/ts-sdk";
+import nacl from 'tweetnacl'; // ← NEW IMPORT
+
+
+// ← NEW HELPER FUNCTION
+/**
+ * Convert a hex string to Uint8Array
+ * @param {string} hexString - Hex string, optionally prefixed with 0x
+ * @returns {Uint8Array}
+ */
+function hexToUint8Array(hexString) {
+  let clean = hexString.startsWith('0x') ? hexString.slice(2) : hexString;
+  if (clean.length % 2 !== 0) {
+    throw new Error('Invalid hex string length');
+  }
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes[i / 2] = parseInt(clean.substr(i, 2), 16);
+  }
+  return bytes;
+}
 
 
 class AptosService {
@@ -158,7 +178,7 @@ class AptosService {
       return {
         success: true,
         address,
-        balance: balance / 100_000_000, // Convert from Octas to APT
+        balance: balance / 100_000_000,
         balanceOctas: balance,
         formattedBalance: `${(balance / 100_000_000).toFixed(4)} APT`
       };
@@ -178,7 +198,7 @@ class AptosService {
    */
   async fundAccount(address) {
     try {
-      const networkName = process.env.APTOS_NETWORK || 'testnet';
+      const networkName = process.env.APTOS_NETWORK || 'devnet';
       if (networkName === 'mainnet') {
         return { 
           success: false, 
@@ -212,7 +232,7 @@ class AptosService {
   /**
    * Store memory hash on Aptos blockchain
    */
- async storeMemoryOnChain(ipfsHash, userAddress = null) {
+  async storeMemoryOnChain(ipfsHash, userAddress = null) {
     try {
       if (!this.initialized) {
         await this.initialize();
@@ -220,21 +240,18 @@ class AptosService {
 
       console.log(`📝 Preparing blockchain transaction for IPFS: ${ipfsHash}`);
 
-      // Ensure formatting is exactly address::module::function
       const functionPayload = `${this.moduleAddress}::${this.moduleName}::store_memory`;
 
-      // Build the transaction
       const transaction = await this.aptos.transaction.build.simple({
         sender: this.masterAccount.accountAddress,
         data: {
           function: functionPayload,
-          functionArguments: [ipfsHash], // Aptos SDK converts strings to Move strings automatically
+          functionArguments: [ipfsHash],
         },
       });
 
       console.log('🔑 Signing and submitting transaction...');
 
-      // Sign and submit
       const senderAuthenticator = this.aptos.transaction.sign({
         signer: this.masterAccount,
         transaction,
@@ -247,7 +264,6 @@ class AptosService {
 
       console.log(`📡 Transaction submitted. Hash: ${pendingTx.hash}`);
 
-      // Wait for confirmation
       const executedTx = await this.aptos.waitForTransaction({
         transactionHash: pendingTx.hash,
       });
@@ -266,6 +282,156 @@ class AptosService {
       console.error('Message:', error.message);
       
       throw new Error(`Aptos transaction failed: ${error.message}`);
+    }
+  }
+
+  // =============================================
+  // ← NEW METHOD: SPONSORED/RELAYED TRANSACTION
+  // =============================================
+
+  /**
+   * Verify a user's Ed25519 signature over an IPFS hash, then submit
+   * the on-chain transaction using the server's master account (gas sponsor).
+   *
+   * Flow:
+   *   1. Verify: nacl.sign.detached.verify(ipfsHashBytes, signatureBytes, pubKeyBytes)
+   *   2. Submit: build + sign + send tx from masterAccount
+   *   3. Return tx receipt
+   *
+   * @param {string} ipfsHash      - The IPFS CID the user signed
+   * @param {string} userPublicKey - User's Ed25519 public key (hex, with or without 0x)
+   * @param {string} signature     - User's Ed25519 detached signature (hex, with or without 0x)
+   * @returns {Object} { success, txHash, txVersion, ipfsHash }
+   */
+  async submitSponsoredMemory(ipfsHash, userPublicKey, signature) {
+    // ── 0. Ensure the service is ready ──────────────────────────
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    if (!this.moduleAddress) {
+      throw new Error(
+        'APTOS_MODULE_ADDRESS is not configured. Cannot submit on-chain transaction.'
+      );
+    }
+
+    // ── 1. Verify the user's signature ──────────────────────────
+    console.log('🔏 Verifying user signature for relay...');
+    console.log(`   IPFS Hash : ${ipfsHash}`);
+    console.log(`   Public Key: ${userPublicKey?.substring(0, 20)}...`);
+    console.log(`   Signature : ${signature?.substring(0, 20)}...`);
+
+    try {
+      const messageBytes   = new TextEncoder().encode(ipfsHash);
+      const signatureBytes = hexToUint8Array(signature);
+      const pubKeyBytes    = hexToUint8Array(userPublicKey);
+
+      // Ed25519 sanity checks
+      if (signatureBytes.length !== 64) {
+        throw new Error(
+          `Invalid signature length: expected 64 bytes, got ${signatureBytes.length}`
+        );
+      }
+      if (pubKeyBytes.length !== 32) {
+        throw new Error(
+          `Invalid public key length: expected 32 bytes, got ${pubKeyBytes.length}`
+        );
+      }
+
+      const isValid = nacl.sign.detached.verify(
+        messageBytes,
+        signatureBytes,
+        pubKeyBytes
+      );
+
+      if (!isValid) {
+        throw new Error('Signature verification failed — the signature does not match the public key and IPFS hash');
+      }
+
+      console.log('✅ Signature verified successfully');
+    } catch (verifyError) {
+      console.error('❌ Signature verification failed:', verifyError.message);
+      throw new Error(`Relay rejected: ${verifyError.message}`);
+    }
+
+    // ── 2. Build, sign & submit the transaction (master pays gas) ─
+    try {
+      console.log('⛓️  Building sponsored transaction...');
+
+      const functionPayload = `${this.moduleAddress}::${this.moduleName}::store_memory`;
+
+      const transaction = await this.aptos.transaction.build.simple({
+        sender: this.masterAccount.accountAddress,
+        data: {
+          function: functionPayload,
+          functionArguments: [ipfsHash],
+        },
+      });
+
+      console.log('🔑 Signing with master account (gas sponsor)...');
+
+      const senderAuthenticator = this.aptos.transaction.sign({
+        signer: this.masterAccount,
+        transaction,
+      });
+
+      const pendingTx = await this.aptos.transaction.submit.simple({
+        transaction,
+        senderAuthenticator,
+      });
+
+      console.log(`📡 Sponsored tx submitted. Hash: ${pendingTx.hash}`);
+
+      // Wait for finality
+      const executedTx = await this.aptos.waitForTransaction({
+        transactionHash: pendingTx.hash,
+      });
+
+      console.log(`✅ Sponsored tx confirmed! Version: ${executedTx.version}`);
+
+      return {
+        success: true,
+        txHash: pendingTx.hash,
+        txVersion: executedTx.version,
+        ipfsHash,
+        sponsored: true
+      };
+    } catch (txError) {
+      console.error('❌ Sponsored transaction failed:');
+      if (txError.data) console.error('Error Data:', txError.data);
+      console.error('Message:', txError.message);
+      throw new Error(`Sponsored transaction failed: ${txError.message}`);
+    }
+  }
+
+  // =============================================
+  // ← END NEW METHOD
+  // =============================================
+
+  /**
+   * Get transaction details from Aptos
+   * @param {string} txHash - Transaction hash
+   */
+  async getTransaction(txHash) {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+
+      const transaction = await this.aptos.getTransactionByHash({
+        transactionHash: txHash,
+      });
+
+      return {
+        success: true,
+        transaction
+      };
+    } catch (error) {
+      console.error('Get transaction error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
     }
   }
 
