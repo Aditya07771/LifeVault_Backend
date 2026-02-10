@@ -121,6 +121,109 @@ class GeolocationService {
       .filter(loc => loc.distance <= maxDistanceMeters)
       .sort((a, b) => a.distance - b.distance);
   }
+
+  /**
+   * Verify a user's submitted location against a target location
+   * Used by VerificationService (quests + story unlocks)
+   *
+   * @param {{ latitude:number, longitude:number, accuracy?:number }} submittedLocation
+   * @param {{ coordinates:[number,number], radiusMeters:number }} targetLocation
+   */
+  verifyLocation(submittedLocation, targetLocation) {
+    try {
+      const userLat = submittedLocation?.latitude;
+      const userLon = submittedLocation?.longitude;
+
+      if (typeof userLat !== 'number' || typeof userLon !== 'number') {
+        return {
+          passed: false,
+          withinRadius: false,
+          distanceMeters: null,
+          allowedRadius: targetLocation?.radiusMeters || null,
+          message: 'Location data not provided'
+        };
+      }
+
+      const coords = targetLocation?.coordinates;
+      const allowedRadius = Math.max(10, Number(targetLocation?.radiusMeters || 50));
+
+      if (!Array.isArray(coords) || coords.length !== 2) {
+        return {
+          passed: false,
+          withinRadius: false,
+          distanceMeters: null,
+          allowedRadius,
+          message: 'Quest target location not configured'
+        };
+      }
+
+      // targetLocation.coordinates is [lng, lat]
+      const targetLon = Number(coords[0]);
+      const targetLat = Number(coords[1]);
+
+      if (!this.isValidCoordinates(userLat, userLon) || !this.isValidCoordinates(targetLat, targetLon)) {
+        return {
+          passed: false,
+          withinRadius: false,
+          distanceMeters: null,
+          allowedRadius,
+          message: 'Invalid coordinates'
+        };
+      }
+
+      const distanceMeters = Math.round(this.calculateDistance(userLat, userLon, targetLat, targetLon));
+      const withinRadius = distanceMeters <= allowedRadius;
+
+      return {
+        passed: withinRadius,
+        withinRadius,
+        distanceMeters,
+        allowedRadius,
+        message: withinRadius
+          ? `✅ Location verified (${distanceMeters}m away)`
+          : `❌ Location mismatch (${distanceMeters}m away, allowed ${allowedRadius}m)`
+      };
+    } catch (e) {
+      return {
+        passed: false,
+        withinRadius: false,
+        distanceMeters: null,
+        allowedRadius: targetLocation?.radiusMeters || null,
+        message: e?.message || 'Location verification failed'
+      };
+    }
+  }
+
+  /**
+   * Simple anti-spoofing detection hook (optional).
+   * If deviceInfo is not provided, callers usually skip this anyway.
+   */
+  detectSpoofing(deviceInfo) {
+    const checks = [];
+    let riskScore = 0;
+
+    if (!deviceInfo) {
+      return { passed: true, checks, riskScore: 0 };
+    }
+
+    // Basic heuristics (safe defaults)
+    if (deviceInfo.isEmulator) {
+      checks.push({ check: 'isEmulator', passed: false, details: 'Device reports emulator' });
+      riskScore += 0.6;
+    } else {
+      checks.push({ check: 'isEmulator', passed: true, details: 'Not an emulator' });
+    }
+
+    if (deviceInfo.isMockLocation) {
+      checks.push({ check: 'mockLocation', passed: false, details: 'Mock location enabled' });
+      riskScore += 0.6;
+    } else {
+      checks.push({ check: 'mockLocation', passed: true, details: 'Mock location not detected' });
+    }
+
+    riskScore = Math.min(1, riskScore);
+    return { passed: riskScore <= 0.5, checks, riskScore };
+  }
 }
 
 export default new GeolocationService();

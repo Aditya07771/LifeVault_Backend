@@ -17,18 +17,20 @@ import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
+// Protected routes (User specific)
+router.get('/user/my-badges', protect, getMyBadges);
+router.get('/user/created', protect, getCreatedBadges);
+router.get('/user/:userId', getUserBadges);
+
 // Public routes
 router.get('/', getBadges);
 router.get('/leaderboard', getBadgeLeaderboard);
 router.get('/:id', getBadge);
-router.get('/user/:userId', getUserBadges);
 
-// Protected routes
+// Protected routes (Actions)
 router.use(protect);
 
 router.post('/', createBadge);
-router.get('/user/my-badges', getMyBadges);
-router.get('/user/created', getCreatedBadges);
 
 router.post('/:id/award', awardBadge);
 router.put('/:id', updateBadge);

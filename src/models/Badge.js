@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { BADGE_RARITY } from '../config/constants.js';
+import crypto from 'crypto';
 
 const badgeSchema = new mongoose.Schema({
   // Basic Info
@@ -110,31 +111,31 @@ badgeSchema.index({ campaignId: 1 });
 badgeSchema.index({ rarity: 1 });
 
 // Generate short code
-badgeSchema.pre('save', function(next) {
+badgeSchema.pre('save', function (next) {
   if (!this.shortCode) {
-    this.shortCode = 'B' + require('crypto').randomBytes(3).toString('hex').toUpperCase();
+    this.shortCode = 'B' + crypto.randomBytes(3).toString('hex').toUpperCase();
   }
   next();
 });
 
 // Method: Award badge to user
-badgeSchema.methods.awardTo = async function(userId) {
+badgeSchema.methods.awardTo = async function (userId) {
   const User = mongoose.model('User');
   const user = await User.findById(userId);
-  
+
   if (!user) throw new Error('User not found');
-  
+
   // Check if already has badge
   if (user.badges?.some(b => b.badgeId.toString() === this._id.toString())) {
     throw new Error('User already has this badge');
   }
-  
+
   // Check max supply
-  if (this.nftMetadata?.maxSupply && 
-      this.stats.totalAwarded >= this.nftMetadata.maxSupply) {
+  if (this.nftMetadata?.maxSupply &&
+    this.stats.totalAwarded >= this.nftMetadata.maxSupply) {
     throw new Error('Badge max supply reached');
   }
-  
+
   // Add to user
   if (!user.badges) user.badges = [];
   user.badges.push({
@@ -142,13 +143,13 @@ badgeSchema.methods.awardTo = async function(userId) {
     awardedAt: new Date(),
     questCompletionId: null // Can be linked later
   });
-  
+
   // Update stats
   this.stats.totalAwarded += 1;
   this.stats.uniqueHolders += 1;
-  
+
   await Promise.all([user.save(), this.save()]);
-  
+
   return { success: true, badge: this, user };
 };
 

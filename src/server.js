@@ -6,6 +6,7 @@ dotenv.config();
 import app from './app.js';
 import connectDB from './config/database.js';
 import aptosService from './services/aptosService.js';
+import { seedDemoBusinessUser } from './utils/seedDemoBusinessUser.js';
 
 const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -24,6 +25,13 @@ const initializeServices = async () => {
     console.log('📊 Connecting to MongoDB...');
     await connectDB();
     console.log('✅ MongoDB connected\n');
+
+    // Seed demo business account (dev convenience)
+    try {
+      await seedDemoBusinessUser();
+    } catch (err) {
+      console.warn('ℹ️  Demo business seed skipped:', err.message);
+    }
 
     // 2. Initialize Aptos Service
     console.log('⛓️  Initializing Aptos service...');

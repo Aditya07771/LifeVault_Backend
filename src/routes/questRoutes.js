@@ -30,6 +30,9 @@ const router = express.Router();
 // Get all quests (filters, pagination)
 router.get('/', getQuests);
 
+// Get user quest history
+router.get('/user/history', protect, getQuestHistory);
+
 // Get nearby quests
 router.get('/nearby', getNearbyQuests);
 
@@ -38,15 +41,6 @@ router.get('/:id/leaderboard', getQuestLeaderboard);
 
 // Get single quest
 router.get('/:id', getQuest);
-
-/**
- * =========================
- * PROTECTED ROUTES
- * =========================
- */
-
-// Get user quest history
-router.get('/user/history', protect, getQuestHistory);
 
 // Create a quest (Creator / Brand / Admin)
 // router.post('/', protect, authorize('creator', 'brand', 'admin'), createQuest);

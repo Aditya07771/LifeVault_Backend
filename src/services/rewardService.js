@@ -54,7 +54,7 @@ class RewardService {
       await user.updateStreak();
 
       // 7. Update quest stats
-      await this.updateUserQuestStats(user, quest.rewards.aptAmount);
+      await this.updateUserQuestStats(user, quest.rewards.aptAmount, quest.rewards.points);
 
       // 8. Update quest budget
       await this.updateQuestBudget(quest, quest.rewards.aptAmount);
@@ -208,9 +208,9 @@ class RewardService {
   /**
    * Update user's quest statistics
    */
-  async updateUserQuestStats(user, aptEarned) {
+  async updateUserQuestStats(user, aptEarned, pointsEarned) {
     user.questStats.totalCompleted += 1;
-    user.questStats.totalPointsEarned += user.points?.current || 0;
+    user.questStats.totalPointsEarned += pointsEarned || 0;
     user.questStats.totalAptEarned += aptEarned || 0;
     user.questStats.lastCompletedAt = new Date();
     await user.save();

@@ -6,6 +6,7 @@ import verificationService from '../services/verificationService.js';
 import rewardService from '../services/rewardService.js';
 import ipfsService from '../services/ipfsService.js';
 import encryptionService from '../services/encryptionService.js';
+import emailService from '../services/emailService.js';
 import { QUEST_STATUS, VERIFICATION_RESULT, ERROR_CODES } from '../config/constants.js';
 
 /**
@@ -16,22 +17,9 @@ import { QUEST_STATUS, VERIFICATION_RESULT, ERROR_CODES } from '../config/consta
 export const createQuest = async (req, res, next) => {
   try {
     const {
-      title,
-      description,
-      questType,
-      location,
-      timeWindow,
-      qrCode,
-      aiVerification,
-      rewards,
-      budget,
-      startDate,
-      endDate,
-      category,
-      difficulty,
-      tags,
-      campaignId,
-      coverImage
+      title, description, questType, location, timeWindow,
+      qrCode, aiVerification, rewards, budget, startDate,
+      endDate, category, difficulty, tags, campaignId, coverImage
     } = req.body;
 
     // Validate required fields
@@ -42,15 +30,31 @@ export const createQuest = async (req, res, next) => {
       });
     }
 
+    // ============================================
+    // 🔧 FIX: Validate & sanitize rewards.badgeId
+    // ============================================
+    let sanitizedRewards = { ...(rewards || {}) };
+
+    if (sanitizedRewards.badgeId) {
+      const { Types } = await import('mongoose');
+
+      if (!Types.ObjectId.isValid(sanitizedRewards.badgeId)) {
+        // Option A: Return an error
+        return res.status(400).json({
+          success: false,
+          message: `Invalid badgeId: "${sanitizedRewards.badgeId}". Must be a valid 24-character hex ObjectId.`
+        });
+
+        // Option B (alternative): Silently strip invalid badgeId
+        // delete sanitizedRewards.badgeId;
+      }
+    }
+
     // Generate QR code secret if QR is enabled
     let qrCodeData = qrCode;
     if (qrCode?.enabled && !qrCode.code) {
       const { code, hash } = encryptionService.generateQRSecret();
-      qrCodeData = {
-        ...qrCode,
-        code,
-        codeHash: hash
-      };
+      qrCodeData = { ...qrCode, code, codeHash: hash };
     }
 
     // Create quest
@@ -64,7 +68,7 @@ export const createQuest = async (req, res, next) => {
       timeWindow,
       qrCode: qrCodeData,
       aiVerification,
-      rewards: rewards || {},
+      rewards: sanitizedRewards,   // ✅ Use sanitized rewards
       budget: budget || {},
       status: QUEST_STATUS.DRAFT,
       startDate,
@@ -76,24 +80,11 @@ export const createQuest = async (req, res, next) => {
       coverImage
     });
 
-    // If part of a campaign, add to campaign
-    if (campaignId) {
-      await Campaign.findByIdAndUpdate(campaignId, {
-        $push: { quests: { questId: quest._id, order: 0 } }
-      });
-    }
-
-    console.log('✅ Quest created:', quest._id);
-
     res.status(201).json({
       success: true,
       message: 'Quest created successfully',
-      data: {
-        quest,
-        qrCodeSecret: qrCodeData?.code // Only return once, creator should save this
-      }
+      data: quest
     });
-
   } catch (error) {
     console.error('Create quest error:', error);
     next(error);
@@ -289,7 +280,7 @@ export const getQuest = async (req, res, next) => {
     // Check if user can attempt
     let canAttempt = null;
     let userCompletions = [];
-    
+
     if (req.user) {
       canAttempt = await quest.canUserAttempt(req.user._id);
       userCompletions = await QuestCompletion.find({
@@ -496,12 +487,30 @@ export const submitQuestCompletion = async (req, res, next) => {
       // Update attempt
       await attempt.markAsCompleted(verification, rewardResults, rewardResults.apt);
 
+      // Send completion email (optional; skipped if SMTP not configured)
+      try {
+        if (req.user?.email) {
+          await emailService.sendQuestCompletionEmail({
+            to: req.user.email,
+            userName: req.user.name,
+            questTitle: quest.title,
+            rewards: {
+              apt: rewardResults.apt,
+              points: rewardResults.points,
+              xp: rewardResults.xp
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('Email send failed:', err.message);
+      }
+
       // Check campaign progress
       if (quest.campaignId) {
         const campaign = await Campaign.findById(quest.campaignId);
         if (campaign) {
           const progress = await campaign.getUserProgress(req.user._id);
-          
+
           if (progress.isCompleted) {
             // Award campaign grand prize
             await rewardService.processCampaignCompletion(req.user._id, campaign);

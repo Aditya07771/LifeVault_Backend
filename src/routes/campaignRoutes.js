@@ -26,6 +26,12 @@ const router = express.Router();
  * =========================
  */
 
+// Campaigns created by logged-in user
+router.get('/user/my-campaigns', protect, getMyCampaigns);
+
+// Campaigns user has joined
+router.get('/user/joined', protect, getJoinedCampaigns);
+
 // Get all campaigns
 router.get('/', optionalAuth, getCampaigns);
 
@@ -34,23 +40,6 @@ router.get('/:id/leaderboard', getCampaignLeaderboard);
 
 // Get single campaign (user progress if logged in)
 router.get('/:id', optionalAuth, getCampaign);
-
-/**
- * =========================
- * PROTECTED ROUTES
- * =========================
- */
-
-router.use(protect);
-
-// Create campaign
-router.post('/', createCampaign);
-
-// Campaigns created by logged-in user
-router.get('/user/my-campaigns', getMyCampaigns);
-
-// Campaigns user has joined
-router.get('/user/joined', getJoinedCampaigns);
 
 // Join campaign
 router.post('/:id/join', joinCampaign);

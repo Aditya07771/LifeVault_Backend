@@ -1,3 +1,5 @@
+// file: backEnd/src/models/SharedLink.js
+
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 
