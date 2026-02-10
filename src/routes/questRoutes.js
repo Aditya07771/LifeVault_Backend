@@ -1,39 +1,73 @@
-// src/routes/questRoutes.js
-
 import express from 'express';
+
 import {
   createQuest,
   getQuests,
   getNearbyQuests,
   getQuest,
-  attemptQuest,
-  getMyCompletions,
-  getMyQuests,
-  updateQuestStatus,
+  startQuestAttempt,
+  submitQuestCompletion,
   updateQuest,
+  activateQuest,
+  pauseQuest,
   deleteQuest,
-  getQuestStats
+  getQuestHistory,
+  getQuestLeaderboard
 } from '../controllers/questController.js';
-import { protect, optionalAuth } from '../middleware/authMiddleware.js';
+
+// Middleware (adjust paths/names if different in your project)
+import { protect } from '../middleware/authMiddleware.js';
+// import { authorize } from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
-// Public routes (with optional auth for user-specific data)
-router.get('/', optionalAuth, getQuests);
+/**
+ * =========================
+ * PUBLIC ROUTES
+ * =========================
+ */
+
+// Get all quests (filters, pagination)
+router.get('/', getQuests);
+
+// Get nearby quests
 router.get('/nearby', getNearbyQuests);
-router.get('/:id', optionalAuth, getQuest);
 
-// Protected routes
-router.use(protect);
+// Get quest leaderboard
+router.get('/:id/leaderboard', getQuestLeaderboard);
 
-router.post('/', createQuest);
-router.get('/user/my-completions', getMyCompletions);
-router.get('/user/my-quests', getMyQuests);
+// Get single quest
+router.get('/:id', getQuest);
 
-router.post('/:id/attempt', attemptQuest);
-router.patch('/:id/status', updateQuestStatus);
-router.put('/:id', updateQuest);
-router.delete('/:id', deleteQuest);
-router.get('/:id/stats', getQuestStats);
+/**
+ * =========================
+ * PROTECTED ROUTES
+ * =========================
+ */
+
+// Get user quest history
+router.get('/user/history', protect, getQuestHistory);
+
+// Create a quest (Creator / Brand / Admin)
+// router.post('/', protect, authorize('creator', 'brand', 'admin'), createQuest);
+router.post('/', protect, createQuest);
+
+// Update quest
+router.put('/:id', protect, updateQuest);
+
+// Activate quest
+router.post('/:id/activate', protect, activateQuest);
+
+// Pause quest
+router.post('/:id/pause', protect, pauseQuest);
+
+// Delete quest
+router.delete('/:id', protect, deleteQuest);
+
+// Start quest attempt
+router.post('/:id/start', protect, startQuestAttempt);
+
+// Submit quest completion
+router.post('/:id/submit', protect, submitQuestCompletion);
 
 export default router;

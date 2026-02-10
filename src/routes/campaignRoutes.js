@@ -6,39 +6,68 @@ import {
   getCampaigns,
   getCampaign,
   joinCampaign,
-  checkCampaignCompletion,
-  getCampaignLeaderboard,
   addQuestToCampaign,
-  removeQuestFromCampaign,
-  updateCampaignStatus,
-  getMyCampaigns,
-  getCampaignStats,
+  getCampaignLeaderboard,
   updateCampaign,
+  activateCampaign,
+  getMyCampaigns,
+  getJoinedCampaigns,
+  checkCampaignCompletion,
   deleteCampaign
 } from '../controllers/campaignController.js';
+
 import { protect, optionalAuth } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Public routes
-router.get('/', getCampaigns);
-router.get('/:id', optionalAuth, getCampaign);
+/**
+ * =========================
+ * PUBLIC ROUTES
+ * =========================
+ */
+
+// Get all campaigns
+router.get('/', optionalAuth, getCampaigns);
+
+// Get campaign leaderboard
 router.get('/:id/leaderboard', getCampaignLeaderboard);
 
-// Protected routes
+// Get single campaign (user progress if logged in)
+router.get('/:id', optionalAuth, getCampaign);
+
+/**
+ * =========================
+ * PROTECTED ROUTES
+ * =========================
+ */
+
 router.use(protect);
 
+// Create campaign
 router.post('/', createCampaign);
+
+// Campaigns created by logged-in user
 router.get('/user/my-campaigns', getMyCampaigns);
 
-router.post('/:id/join', joinCampaign);
-router.post('/:id/check-completion', checkCampaignCompletion);
-router.post('/:id/quests', addQuestToCampaign);
-router.delete('/:id/quests/:questId', removeQuestFromCampaign);
+// Campaigns user has joined
+router.get('/user/joined', getJoinedCampaigns);
 
-router.patch('/:id/status', updateCampaignStatus);
-router.get('/:id/stats', getCampaignStats);
+// Join campaign
+router.post('/:id/join', joinCampaign);
+
+// Check campaign completion
+router.post('/:id/check-completion', checkCampaignCompletion);
+
+// Add quest to campaign
+router.post('/:id/quests', addQuestToCampaign);
+
+// Update campaign
 router.put('/:id', updateCampaign);
+
+// Activate campaign
+router.post('/:id/activate', activateCampaign);
+
+// Delete campaign
 router.delete('/:id', deleteCampaign);
 
 export default router;

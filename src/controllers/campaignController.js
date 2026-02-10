@@ -576,6 +576,137 @@ export const getJoinedCampaigns = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Check if user has completed a campaign
+ * @route   POST /api/campaigns/:id/check-completion
+ * @access  Private
+ */
+export const checkCampaignCompletion = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const campaignId = req.params.id;
+
+    // Get campaign
+    const campaign = await Campaign.findById(campaignId).populate(
+      'quests.questId',
+      '_id title'
+    );
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found'
+      });
+    }
+
+    // If campaign has no quests
+    if (!campaign.quests || campaign.quests.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Campaign has no quests'
+      });
+    }
+
+    // Get all completed quests by user for this campaign
+    const completedQuests = await QuestCompletion.find({
+      userId,
+      campaignId,
+      status: 'completed'
+    }).select('questId');
+
+    const completedQuestIds = new Set(
+      completedQuests.map(q => q.questId.toString())
+    );
+
+    // Check which quests are completed
+    const questProgress = campaign.quests.map(q => ({
+      questId: q.questId._id,
+      title: q.questId.title,
+      completed: completedQuestIds.has(q.questId._id.toString())
+    }));
+
+    const completedCount = questProgress.filter(q => q.completed).length;
+    const totalQuests = campaign.quests.length;
+
+    const isCompleted = completedCount === totalQuests;
+
+    res.json({
+      success: true,
+      data: {
+        campaignId: campaign._id,
+        isCompleted,
+        progress: {
+          completed: completedCount,
+          total: totalQuests
+        },
+        quests: questProgress
+      }
+    });
+
+  } catch (error) {
+    console.error('Check campaign completion error:', error);
+    next(error);
+  }
+};
+
+
+/**
+ * @desc    Delete a campaign
+ * @route   DELETE /api/campaigns/:id
+ * @access  Private (Creator only)
+ */
+export const deleteCampaign = async (req, res, next) => {
+  try {
+    const campaignId = req.params.id;
+    const userId = req.user._id;
+
+    // Find campaign owned by user
+    const campaign = await Campaign.findOne({
+      _id: campaignId,
+      creatorId: userId
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found or you do not have permission'
+      });
+    }
+
+    // Check if any user has joined / completed this campaign
+    const hasProgress = await QuestCompletion.exists({
+      campaignId
+    });
+
+    if (hasProgress) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete campaign with user progress. Consider pausing or ending it instead.'
+      });
+    }
+
+    // Remove campaign reference from quests (optional but clean)
+    await Quest.updateMany(
+      { campaignId },
+      { $unset: { campaignId: '' } }
+    );
+
+    // Delete campaign
+    await campaign.deleteOne();
+
+    res.json({
+      success: true,
+      message: 'Campaign deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete campaign error:', error);
+    next(error);
+  }
+};
+
+
+
 export default {
   createCampaign,
   getCampaigns,
@@ -586,5 +717,7 @@ export default {
   updateCampaign,
   activateCampaign,
   getMyCampaigns,
-  getJoinedCampaigns
+  getJoinedCampaigns,
+  checkCampaignCompletion,
+  deleteCampaign
 };
